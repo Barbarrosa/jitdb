@@ -23,6 +23,8 @@ const {
   listFilesFS,
 } = require('./files')
 
+const returnTrue = () => true
+
 module.exports = function (log, indexesPath) {
   debug('indexes path', indexesPath)
 
@@ -1062,40 +1064,12 @@ module.exports = function (log, indexesPath) {
     onlyOffset,
     cb
   ) {
-    seq = seq || 0
-
-    const returnTrue = () => true
-    let sorted = sortedByTimestamp(bitset, descending)
-    const total = sorted.size
-    let sliced
-    if (limit < 1 || total < 1) {
-      sliced = []
-    } else {
-      if (seq > 0) {
-        sorted = sorted.clone()
-        sorted.removeMany(returnTrue, seq)
-      }
-      if (limit < 2) {
-        sliced = [sorted.peek()]
-      } else {
-        sliced = sorted.kSmallest(limit || Infinity)
-      }
-    }
-    let asyncMapFn
-    let filterFn
-    if (onlyOffset) {
-      const indexTarr = indexes['seq'].tarr
-      asyncMapFn = ({ seq }, cb) => {
-        cb(null, indexTarr[seq])
-      }
-      filterFn = returnTrue
-    } else {
-      asyncMapFn = ({ seq }, cb) => {
-        getMessage(seq, cb)
-      }
-      filterFn = (x) => x
-    }
-
+    let { sliced, total } = _getSortedMessages(
+      sortedByTimestamp(bitset, descending),
+      limit,
+      seq || 0
+    )
+    let { asyncMapFn, filterFn } = _getMessagePushFns(onlyOffset, getMessage)
     push(
       push.values(sliced),
       push.asyncMap(asyncMapFn),
@@ -1264,6 +1238,24 @@ module.exports = function (log, indexesPath) {
     )
   }
 
+  function _getMessagePushFns(onlyOffset, getMessage) {
+    let asyncMapFn
+    let filterFn
+    if (onlyOffset) {
+      const indexTarr = indexes['seq'].tarr
+      asyncMapFn = ({ seq }, cb) => {
+        cb(null, indexTarr[seq])
+      }
+      filterFn = returnTrue
+    } else {
+      asyncMapFn = ({ seq }, cb) => {
+        getMessage(seq, cb)
+      }
+      filterFn = (x) => x
+    }
+    return { asyncMapFn, filterFn }
+  }
+
   return {
     onReady,
     paginate,
@@ -1275,4 +1267,23 @@ module.exports = function (log, indexesPath) {
     // testing
     indexes,
   }
+}
+
+function _getSortedMessages(sorted, limit, seq) {
+  const total = sorted.size
+  let sliced
+  if (limit < 1 || total < 1) {
+    sliced = []
+  } else {
+    if (seq > 0) {
+      sorted = sorted.clone()
+      sorted.removeMany(returnTrue, seq)
+    }
+    if (limit < 2) {
+      sliced = [sorted.peek()]
+    } else {
+      sliced = sorted.kSmallest(limit || Infinity)
+    }
+  }
+  return { sliced, total, sorted }
 }
