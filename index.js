@@ -1082,11 +1082,12 @@ module.exports = function (log, indexesPath) {
 
     push(
       push.values(sliced),
-      push.asyncMap(({ seq }, cb) => {
-        if (onlyOffset) cb(null, indexes['seq'].tarr[seq])
-        else getMessage(seq, cb)
-      }),
-      push.filter((x) => (onlyOffset ? true : x)), // removes deleted messages
+      push.asyncMap(
+        onlyOffset
+          ? ({ seq }, cb) => cb(null, indexes['seq'].tarr[seq])
+          : ({ seq }, cb) => getMessage(seq, cb)
+      ),
+      push.filter(onlyOffset ? () => true : (x) => x), // removes deleted messages
       push.collect((err, results) => {
         cb(err, {
           results: results,
