@@ -1070,14 +1070,16 @@ module.exports = function (log, indexesPath) {
     let sliced
     if (resultSize === 0 || limit <= 0) {
       sliced = []
-    } else if (seq === 0 && limit === 1) {
-      sliced = [sorted.peek()]
     } else {
       if (seq > 0) {
         sorted = sorted.clone()
         sorted.removeMany(() => true, seq)
       }
-      sliced = sorted.kSmallest(limit || Infinity)
+      if (limit === 1) {
+        sliced = [sorted.peek()]
+      } else {
+        sliced = sorted.kSmallest(limit || Infinity)
+      }
     }
 
     push(
