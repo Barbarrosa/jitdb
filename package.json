@@ -7,6 +7,7 @@
     "type": "git",
     "url": "git://github.com/ssb-ngi-pointer/jitdb.git"
   },
+  "main": "dist/index.js",
   "dependencies": {
     "atomically-universal": "^0.1.0",
     "binary-search-bounds": "^2.0.4",
@@ -44,14 +45,19 @@
     "ssb-ref": "^2.14.3",
     "ssb-validate": "^4.1.1",
     "tap-spec": "^5.0.0",
-    "tape": "^5.1.1"
+    "tape": "^5.1.1",
+    "webpack": "^5.27.1",
+    "webpack-cli": "^4.5.0",
+    "webpack-node-externals": "^2.5.2"
   },
   "scripts": {
+    "webpack": "webpack",
+    "prepublishOnly": "webpack --mode production",
     "test": "tape test/*.js | tap-spec",
     "format-code": "prettier --write \"*.js\" \"test/*.js\"",
     "format-code-staged": "pretty-quick --staged --pattern \"*.js\" --pattern \"test/*.js\"",
-    "benchmark": "node benchmark/index.js | tap-spec",
-    "benchmark-no-create": "node benchmark/index.js noCreate | tap-spec"
+    "benchmark": "webpack --mode production && node benchmark/index.js | tap-spec",
+    "benchmark-no-create": "webpack --mode production && node benchmark/index.js noCreate | tap-spec"
   },
   "husky": {
     "hooks": {
