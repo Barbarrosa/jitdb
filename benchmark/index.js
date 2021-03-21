@@ -20,7 +20,7 @@ const {
   toCallback,
   toPullStream,
   paginate,
-} = require('../operators')
+} = require('../dist/operators')
 const { seekType, seekAuthor, seekVoteLink } = require('../test/helpers')
 const copy = require('../copy-json-to-bipf-async')
 
