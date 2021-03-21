@@ -1028,12 +1028,12 @@ module.exports = function (log, indexesPath) {
     })
   }
 
-  function compareAscending(a, b) {
-    return b.timestamp > a.timestamp
+  function compareAscending({ timestamp: a }, { timestamp: b }) {
+    return b > a
   }
 
-  function compareDescending(a, b) {
-    return a.timestamp > b.timestamp
+  function compareDescending({ timestamp: a }, { timestamp: b }) {
+    return a > b
   }
 
   function sortedByTimestamp(bitset, descending) {
