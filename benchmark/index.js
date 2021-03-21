@@ -9,7 +9,7 @@ const mkdirp = require('mkdirp')
 const multicb = require('multicb')
 const ssbKeys = require('ssb-keys')
 const TypedFastBitSet = require('typedfastbitset')
-const JITDB = require('../index')
+const JITDB = require('../dist/index')
 const {
   query,
   fromDB,
