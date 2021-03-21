@@ -1054,6 +1054,21 @@ module.exports = function (log, indexesPath) {
     return fpq
   }
 
+  function betterKSmallest(ofpq, k) {
+    if (ofpq.size == 0) return []
+    k = Math.min(ofpq.size, k)
+    var fpq = new FastPriorityQueue(ofpq.compare)
+    const newSize = Math.min((k > 0 ? Math.pow(2, k - 1) : 0) + 1, ofpq.size)
+    fpq.size = newSize
+    fpq.array = ofpq.array.slice(0, newSize)
+
+    var smallest = new Array(k)
+    for (var i = 0; i < k; i++) {
+      smallest[i] = fpq.poll()
+    }
+    return smallest
+  }
+
   function getMessagesFromBitsetSlice(
     bitset,
     seq,
@@ -1077,7 +1092,7 @@ module.exports = function (log, indexesPath) {
         sorted = sorted.clone()
         sorted.removeMany(() => true, seq)
       }
-      sliced = sorted.kSmallest(limit || Infinity)
+      sliced = betterKSmallest(sorted, limit || Infinity)
     }
 
     push(
