@@ -32,9 +32,7 @@ function toBufferOrFalsy(value) {
   return Buffer.isBuffer(value) ? value : Buffer.from(value)
 }
 
-const slowEqualsCache = new LRU({
-  max: 1500,
-})
+let slowEqualsCache
 function seekFromDesc(desc) {
   if (slowEqualsCache.has(desc)) {
     return slowEqualsCache.get(desc)
@@ -293,7 +291,16 @@ function where(...args) {
 //#endregion
 //#region "Special operators": they only update meta
 
+const slowEqualsCacheWeakMap = new WeakMap()
 function fromDB(jitdb) {
+  if (slowEqualsCacheWeakMap.has(jitdb)) {
+    slowEqualsCache = slowEqualsCacheWeakMap.get(jitdb)
+  } else {
+    slowEqualsCache = new LRU({
+      max: 1500,
+    })
+    slowEqualsCacheWeakMap.set(jitdb, slowEqualsCache)
+  }
   return {
     meta: { jitdb },
   }
