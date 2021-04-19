@@ -1,4 +1,5 @@
 const bipf = require('bipf')
+const LRU = require('lru-cache')
 const traverse = require('traverse')
 const promisify = require('promisify-4loc')
 const pull = require('pull-stream')
@@ -31,10 +32,16 @@ function toBufferOrFalsy(value) {
   return Buffer.isBuffer(value) ? value : Buffer.from(value)
 }
 
+const slowEqualsCache = new LRU({
+  max: 1500,
+})
 function seekFromDesc(desc) {
+  if (slowEqualsCache.has(desc)) {
+    return slowEqualsCache.get(desc)
+  }
   const keys = desc.split('.')
   // The 2nd arg `start` is to support plucks too
-  return (buffer, start = 0) => {
+  const fn = (buffer, start = 0) => {
     var p = start
     for (let key of keys) {
       p = bipf.seekKey(buffer, p, Buffer.from(key))
@@ -42,6 +49,8 @@ function seekFromDesc(desc) {
     }
     return p
   }
+  slowEqualsCache.set(desc, fn)
+  return fn
 }
 
 function getIndexName(opts, indexType, valueName) {
