@@ -313,6 +313,30 @@ prepareAndRunTest('operators API supports or()', dir, (t, db, raf) => {
   t.end()
 })
 
+prepareAndRunTest('operator AND ignores null', dir, (t, db, raf) => {
+  const queryTree = query(
+    fromDB(db),
+    where(
+      and(
+        slowEqual('value.content.type', 'post'),
+        slowEqual('value.author', alice.id),
+        null
+      )
+    )
+  )
+
+  t.equal(typeof queryTree, 'object', 'queryTree is an object')
+
+  t.equal(queryTree.type, 'AND')
+  t.true(Array.isArray(queryTree.data), '.data is an array')
+
+  t.equal(queryTree.data[0].type, 'EQUAL')
+  t.equal(queryTree.data[1].type, 'EQUAL')
+  t.equal(queryTree.data.length, 2)
+
+  t.end()
+})
+
 prepareAndRunTest('operators multi and', dir, (t, db, raf) => {
   const queryTree = query(
     fromDB(db),
@@ -333,6 +357,30 @@ prepareAndRunTest('operators multi and', dir, (t, db, raf) => {
   t.equal(queryTree.data[0].type, 'EQUAL')
   t.equal(queryTree.data[1].type, 'EQUAL')
   t.equal(queryTree.data[2].type, 'EQUAL')
+
+  t.end()
+})
+
+prepareAndRunTest('operator OR ignores null', dir, (t, db, raf) => {
+  const queryTree = query(
+    fromDB(db),
+    where(
+      or(
+        slowEqual('value.content.type', 'post'),
+        slowEqual('value.author', alice.id),
+        null
+      )
+    )
+  )
+
+  t.equal(typeof queryTree, 'object', 'queryTree is an object')
+
+  t.equal(queryTree.type, 'OR')
+  t.true(Array.isArray(queryTree.data), '.data is an array')
+
+  t.equal(queryTree.data[0].type, 'EQUAL')
+  t.equal(queryTree.data[1].type, 'EQUAL')
+  t.equal(queryTree.data.length, 2)
 
   t.end()
 })
@@ -1041,6 +1089,54 @@ prepareAndRunTest('empty deferred AND equal', dir, (t, db, raf) => {
             slowEqual('value.author', alice.id)
           )
         ),
+        toCallback((err, msgs) => {
+          t.error(err, 'toCallback got no error')
+          t.equal(msgs.length, 1, 'toCallback got one message')
+          t.equal(msgs[0].value.author, alice.id)
+          t.equal(msgs[0].value.content.type, 'post')
+          t.end()
+        })
+      )
+    })
+  })
+})
+
+prepareAndRunTest('operator AND ignores null all', dir, (t, db, raf) => {
+  const msg = { type: 'post', text: 'Testing!' }
+  let state = validate.initial()
+  state = validate.appendNew(state, null, alice, msg, Date.now())
+  state = validate.appendNew(state, null, bob, msg, Date.now() + 1)
+
+  addMsg(state.queue[0].value, raf, (e1, msg1) => {
+    addMsg(state.queue[1].value, raf, (e2, msg2) => {
+      query(
+        fromDB(db),
+        where(and(null, null)),
+        toCallback((err, msgs) => {
+          t.error(err, 'toCallback got no error')
+          t.equal(msgs.length, 2, 'toCallback got one message')
+          t.equal(msgs[0].value.author, alice.id)
+          t.equal(msgs[0].value.content.type, 'post')
+          t.equal(msgs[1].value.author, bob.id)
+          t.equal(msgs[1].value.content.type, 'post')
+          t.end()
+        })
+      )
+    })
+  })
+})
+
+prepareAndRunTest('operator AND ignores null two', dir, (t, db, raf) => {
+  const msg = { type: 'post', text: 'Testing!' }
+  let state = validate.initial()
+  state = validate.appendNew(state, null, alice, msg, Date.now())
+  state = validate.appendNew(state, null, bob, msg, Date.now() + 1)
+
+  addMsg(state.queue[0].value, raf, (e1, msg1) => {
+    addMsg(state.queue[1].value, raf, (e2, msg2) => {
+      query(
+        fromDB(db),
+        where(and(slowEqual('value.author', alice.id), null)),
         toCallback((err, msgs) => {
           t.error(err, 'toCallback got no error')
           t.equal(msgs.length, 1, 'toCallback got one message')

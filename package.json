@@ -1,18 +1,19 @@
 {
   "name": "jitdb",
   "description": "A database on top of a flumelog with automatic index generation and maintenance",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "homepage": "https://github.com/ssb-ngi-pointer/jitdb",
   "repository": {
     "type": "git",
     "url": "git://github.com/ssb-ngi-pointer/jitdb.git"
   },
   "dependencies": {
-    "atomically-universal": "^0.1.0",
+    "atomic-file-rw": "^0.2.1",
     "binary-search-bounds": "^2.0.4",
     "bipf": "^1.5.0",
     "debug": "^4.2.0",
     "fastpriorityqueue": "^0.7.1",
+    "hash-wasm": "^4.6.0",
     "idb-kv-store": "^4.5.0",
     "jsesc": "^3.0.2",
     "lru-cache": "^6.0.0",
@@ -27,6 +28,7 @@
     "push-stream": "^11.0.0",
     "push-stream-to-pull-stream": "^1.0.3",
     "sanitize-filename": "^1.6.3",
+    "tap-bail": "^1.0.0",
     "traverse": "^0.6.6",
     "typedarray-to-buffer": "^4.0.0",
     "typedfastbitset": "~0.2.1"
@@ -51,7 +53,7 @@
     "tape": "^5.2.2"
   },
   "scripts": {
-    "test": "tape test/*.js | tap-spec",
+    "test": "tape test/*.js | tap-bail | tap-spec",
     "format-code": "prettier --write \"*.js\" \"test/*.js\"",
     "format-code-staged": "pretty-quick --staged --pattern \"*.js\" --pattern \"test/*.js\"",
     "benchmark": "node benchmark/index.js | tap-spec",

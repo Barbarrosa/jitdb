@@ -77,7 +77,6 @@ module.exports = function (log, indexesPath) {
   const bSequence = Buffer.from('sequence')
   const bValue = Buffer.from('value')
 
-  // FIXME: handle the errors in these callbacks
   function loadIndexes(cb) {
     function parseIndexes(err, files) {
       push(
@@ -88,8 +87,8 @@ module.exports = function (log, indexesPath) {
             loadTypedArrayFile(
               path.join(indexesPath, file),
               Uint32Array,
-              (e, idx) => {
-                indexes[indexName] = idx
+              (err, idx) => {
+                if (!err) indexes[indexName] = idx
                 cb()
               }
             )
@@ -97,8 +96,8 @@ module.exports = function (log, indexesPath) {
             loadTypedArrayFile(
               path.join(indexesPath, file),
               Float64Array,
-              (e, idx) => {
-                indexes[indexName] = idx
+              (err, idx) => {
+                if (!err) indexes[indexName] = idx
                 cb()
               }
             )
@@ -106,8 +105,8 @@ module.exports = function (log, indexesPath) {
             loadTypedArrayFile(
               path.join(indexesPath, file),
               Uint32Array,
-              (e, idx) => {
-                indexes[indexName] = idx
+              (err, idx) => {
+                if (!err) indexes[indexName] = idx
                 cb()
               }
             )
@@ -520,16 +519,16 @@ module.exports = function (log, indexesPath) {
   // concurrent index create
   const waitingIndexCreate = new Map()
 
-  function createIndexes(opsMissingIndexes, cb) {
+  function createIndexes(opsMissingIdx, cb) {
     const newIndexes = {}
 
     const coreIndexNames = ['seq', 'timestamp', 'sequence']
-    const newIndexNames = opsMissingIndexes.map((op) => op.data.indexName)
+    const newIndexNames = opsMissingIdx.map((op) => op.data.indexName)
 
     const waitingKey = newIndexNames.join('|')
     if (onlyOneIndexAtATime(waitingIndexCreate, waitingKey, cb)) return
 
-    opsMissingIndexes.forEach((op) => {
+    opsMissingIdx.forEach((op) => {
       if (op.data.prefix && op.data.useMap) {
         newIndexes[op.data.indexName] = {
           offset: 0,
@@ -602,7 +601,7 @@ module.exports = function (log, indexesPath) {
         if (updateSequenceIndex(seq, offset, buffer))
           updatedSequenceIndex = true
 
-        opsMissingIndexes.forEach((op) => {
+        opsMissingIdx.forEach((op) => {
           if (op.data.prefix && op.data.useMap)
             updatePrefixMapIndex(
               op.data,
@@ -666,7 +665,12 @@ module.exports = function (log, indexesPath) {
     let index = indexes[indexName]
     if (index.prefix && index.map) {
       loadPrefixMapFile(index.filepath, (err, data) => {
-        if (err) return cb(err)
+        if (err) {
+          debug('index %s failed to load with %s', indexName, err)
+          delete indexes[indexName]
+          return cb() // don't return a error, index will be rebuild
+        }
+
         const { version, offset, count, map } = data
         index.version = version
         index.offset = offset
@@ -680,7 +684,12 @@ module.exports = function (log, indexesPath) {
       })
     } else if (index.prefix) {
       loadTypedArrayFile(index.filepath, Uint32Array, (err, data) => {
-        if (err) return cb(err)
+        if (err) {
+          debug('index %s failed to load with %s', indexName, err)
+          delete indexes[indexName]
+          return cb() // don't return a error, index will be rebuild
+        }
+
         const { version, offset, count, tarr } = data
         index.version = version
         index.offset = offset
@@ -694,7 +703,12 @@ module.exports = function (log, indexesPath) {
       })
     } else {
       loadBitsetFile(index.filepath, (err, data) => {
-        if (err) return cb(err)
+        if (err) {
+          debug('index %s failed to load with %s', indexName, err)
+          delete indexes[indexName]
+          return cb() // don't return a error, index will be rebuild
+        }
+
         const { version, offset, bitset } = data
         index.version = version
         index.offset = offset
@@ -706,14 +720,6 @@ module.exports = function (log, indexesPath) {
         cb()
       })
     }
-  }
-
-  function loadLazyIndexes(indexNames, cb) {
-    push(
-      push.values(indexNames),
-      push.asyncMap(loadLazyIndex),
-      push.collect(cb)
-    )
   }
 
   function ensureIndexSync(op, cb) {
@@ -948,21 +954,13 @@ module.exports = function (log, indexesPath) {
     } else console.error('Unknown type', op)
   }
 
-  function executeOperation(operation, cb) {
-    updateCacheWithLog()
-    if (bitsetCache.has(operation)) return cb(...bitsetCache.get(operation))
-
-    const opsMissingIndexes = []
-    const lazyIndexes = []
-
-    function detectMissingAndLazyIndexes(ops) {
+  function traverseEqualsAndIncludes(operation, fn) {
+    function traverseMore(ops) {
       ops.forEach((op) => {
         if (op.type === 'EQUAL' || op.type === 'INCLUDES') {
-          const indexName = op.data.indexName
-          if (!indexes[indexName]) opsMissingIndexes.push(op)
-          else if (indexes[indexName].lazy) lazyIndexes.push(indexName)
+          fn(op)
         } else if (op.type === 'AND' || op.type === 'OR' || op.type === 'NOT')
-          detectMissingAndLazyIndexes(op.data)
+          traverseMore(op.data)
         else if (
           op.type === 'SEQS' ||
           op.type === 'LIVESEQS' ||
@@ -976,30 +974,73 @@ module.exports = function (log, indexesPath) {
         else debug('Unknown operator type: ' + op.type)
       })
     }
+    traverseMore([operation])
+  }
 
-    function getBitset() {
-      getBitsetForOperation(operation, (bitset, filters) => {
-        bitsetCache.set(operation, [bitset, filters])
-        cb(bitset, filters)
-      })
-    }
-
-    function createMissingIndexes() {
-      if (opsMissingIndexes.length > 0)
-        createIndexes(opsMissingIndexes, getBitset)
-      else getBitset()
-    }
-
-    detectMissingAndLazyIndexes([operation])
-
-    ensureSeqIndexSync(() => {
-      if (opsMissingIndexes.length > 0)
-        debug('missing indexes: %o', opsMissingIndexes)
-
-      if (lazyIndexes.length > 0)
-        loadLazyIndexes(lazyIndexes, createMissingIndexes)
-      else createMissingIndexes()
+  function detectLazyIndexesUsed(operation) {
+    const results = []
+    traverseEqualsAndIncludes(operation, (op) => {
+      const name = op.data.indexName
+      if (indexes[name] && indexes[name].lazy) results.push(name)
     })
+    return results
+  }
+
+  function detectOpsMissingIndexes(operation) {
+    const results = []
+    traverseEqualsAndIncludes(operation, (op) => {
+      if (!indexes[op.data.indexName]) results.push(op)
+    })
+    return results
+  }
+
+  function executeOperation(operation, cb) {
+    updateCacheWithLog()
+    if (bitsetCache.has(operation)) return cb(null, bitsetCache.get(operation))
+
+    push(
+      // kick-start this chain with a dummy null value
+      push.values([null]),
+
+      // ensure that the seq->offset index is synchronized with the log
+      push.asyncMap((_, next) => ensureSeqIndexSync(next)),
+
+      // load lazy indexes, if any
+      push.asyncMap((_, next) => {
+        const lazyIdxNames = detectLazyIndexesUsed(operation)
+        if (lazyIdxNames.length === 0) return next()
+        push(
+          push.values(lazyIdxNames),
+          push.asyncMap(loadLazyIndex),
+          push.collect(next)
+        )
+      }),
+
+      // create missing indexes, if any
+      //
+      // this needs to happen after loading lazy indexes because some
+      // lazy indexes may have failed to load, and are now considered missing
+      push.asyncMap((_, next) => {
+        const opsMissingIdx = detectOpsMissingIndexes(operation)
+        if (opsMissingIdx.length === 0) return next()
+        debug('missing indexes: %o', opsMissingIdx)
+        createIndexes(opsMissingIdx, next)
+      }),
+
+      // get bitset for the input operation, and cache it
+      push.asyncMap((_, next) => {
+        getBitsetForOperation(operation, (bitset, filters) => {
+          bitsetCache.set(operation, [bitset, filters])
+          next(null, [bitset, filters])
+        })
+      }),
+
+      // return bitset and filter functions
+      push.collect((err, results) => {
+        if (err) cb(err)
+        else cb(null, results[0])
+      })
+    )
   }
 
   function isValueOk(ops, value, isOr) {
@@ -1186,7 +1227,9 @@ module.exports = function (log, indexesPath) {
   function paginate(operation, seq, limit, descending, onlyOffset, cb) {
     onReady(() => {
       const start = Date.now()
-      executeOperation(operation, (bitset, filters) => {
+      executeOperation(operation, (err0, result) => {
+        if (err0) return cb(err0)
+        const [bitset, filters] = result
         getMessagesFromBitsetSlice(
           bitset,
           filters,
@@ -1194,8 +1237,8 @@ module.exports = function (log, indexesPath) {
           limit,
           descending,
           onlyOffset,
-          (err, answer) => {
-            if (err) cb(err)
+          (err1, answer) => {
+            if (err1) cb(err1)
             else {
               answer.duration = Date.now() - start
               if (debugQuery.enabled)
@@ -1206,7 +1249,7 @@ module.exports = function (log, indexesPath) {
                     answer.duration
                   }ms, total messages: ${answer.total}`.replace(/%/g, '%% ')
                 )
-              cb(err, answer)
+              cb(null, answer)
             }
           }
         )
@@ -1217,7 +1260,9 @@ module.exports = function (log, indexesPath) {
   function all(operation, seq, descending, onlyOffset, cb) {
     onReady(() => {
       const start = Date.now()
-      executeOperation(operation, (bitset, filters) => {
+      executeOperation(operation, (err0, result) => {
+        if (err0) return cb(err0)
+        const [bitset, filters] = result
         getMessagesFromBitsetSlice(
           bitset,
           filters,
@@ -1225,8 +1270,8 @@ module.exports = function (log, indexesPath) {
           Infinity,
           descending,
           onlyOffset,
-          (err, answer) => {
-            if (err) cb(err)
+          (err1, answer) => {
+            if (err1) cb(err1)
             else {
               answer.duration = Date.now() - start
               if (debugQuery.enabled)
@@ -1235,7 +1280,7 @@ module.exports = function (log, indexesPath) {
                     answer.duration
                   }ms, total messages: ${answer.total}`.replace(/%/g, '%% ')
                 )
-              cb(err, answer.results)
+              cb(null, answer.results)
             }
           }
         )
@@ -1246,7 +1291,9 @@ module.exports = function (log, indexesPath) {
   function count(operation, seq, descending, cb) {
     onReady(() => {
       const start = Date.now()
-      executeOperation(operation, (bitset) => {
+      executeOperation(operation, (err0, result) => {
+        if (err0) return cb(err0)
+        const [bitset] = result
         const total = countBitsetSlice(bitset, seq, descending)
         const duration = Date.now() - start
         if (debugQuery.enabled)
@@ -1266,9 +1313,7 @@ module.exports = function (log, indexesPath) {
     return pull(
       pullAsync((cb) =>
         onReady(() => {
-          executeOperation(op, (bitset) => {
-            cb()
-          })
+          executeOperation(op, (err) => cb(err))
         })
       ),
       pull.map(() => {
